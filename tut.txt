@@ -1,0 +1,5 @@
+1. Outline basic game loop.
+2. Set up sfml so that it draws a white screen and quits when it recieves the
+close window event.
+3. Explain difference between polling a key event and checking isKeyPressed in
+realtime.
