@@ -39,6 +39,8 @@ int main(int argc, char** args)
 {
     // Initialize variables. I like to do this at the top, so at a glance I can
     // see exactly what's in scope.
+    const unsigned int SCREEN_WIDTH = 768; // Screen width.
+    const unsigned int SCREEN_HEIGHT = 480; // Screen height.
     bool quit = false; // If set to true, game will quit immediately.
     sf::RenderWindow gameWindow; // Game window that shows up on the screen.
     sf::Event event; // Event recieved by SFML popping from the event queue.
@@ -48,21 +50,25 @@ int main(int argc, char** args)
     const unsigned int FPS = 60;
     sf::Clock clock;
 
-    // Initialize 1024x768 SFML game window with 32 bit pixel depth.
-    gameWindow.create(sf::VideoMode(768, 480, 32), "I am a game window.");
+    // Initialize 768x480 SFML game window with 32 bit pixel depth.
+    gameWindow.create(sf::VideoMode(SCREEN_WIDTH, SCREEN_HEIGHT, 32), "I am a game window.");
     gameWindow.setFramerateLimit(FPS); // Yep, it's that easy.
 
     // Initialize game objects.
     // Player represented by a 50x50px rectangle at location (0,0) with a 5px
     // outline.
+    const int PL_SIZE_X = 50;
+    const int PL_SIZE_Y = 50;
+    const int PL_OUTLINE_THICKNESS = 5;
     playerShape = new sf::RectangleShape;
-    playerShape->setPosition(50, 50);
     playerShape->setSize(sf::Vector2f(50, 50));
     playerShape->setOutlineColor(sf::Color::Black);
-    playerShape->setOutlineThickness(5);
-    player = new Player(
-        playerShape
+    playerShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
+    playerShape->setPosition(
+            SCREEN_WIDTH / 2 - PL_SIZE_X, // Center player horizontally.
+            SCREEN_HEIGHT - PL_SIZE_Y - PL_OUTLINE_THICKNESS // Put player on bottom of the screen.
     );
+    player = new Player(playerShape);
     gameObjects.push_back(player);
 
     // GAME LOOP
@@ -100,6 +106,17 @@ int main(int argc, char** args)
 
                     }
                     break;
+
+                // If the window is resized, resize the view, otherwise the
+                // rendering will be distorted.
+                case sf::Event::Resized:
+                    gameWindow.setView(sf::View(sf::FloatRect(
+                        0.0f,
+                        0.0f,
+                        gameWindow.getSize().x,
+                        gameWindow.getSize().y))
+                    );
+                    break;
             } 
         }
         // Check what keys are being pressed in real-time.
@@ -107,6 +124,7 @@ int main(int argc, char** args)
         {
             std::cout << "X key pressed." << std::endl;
         }
+        // Movement.
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up))
             player->velY -= player->speed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))
@@ -115,6 +133,10 @@ int main(int argc, char** args)
             player->velX -= player->speed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
             player->velX += player->speed;
+        // Jump.
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
+        {
+        }
 
         // Using an iterator means we can store game objects in any STL
         // container down the road.
@@ -127,7 +149,6 @@ int main(int argc, char** args)
             // STATE UPDATES/CALCULATIONS
             // Any updates to an object's state goes here. This is also called
             // integration.
-            gameObject->update(dt); // Update object state.
             gameObject->shape->move(gameObject->velX * dt, gameObject->velY * dt);
             gameObject->velX = 0;
             gameObject->velY = 0;
@@ -136,7 +157,6 @@ int main(int argc, char** args)
             // This draws an object to the game window, but remember, it does not
             // actually DISPLAY it on the screen, that's what
             // sf::RenderWindow::display() is for.
-            gameObject->render(gameWindow); // Render object to window.
             gameWindow.draw(*(gameObject->shape));
         }
 
