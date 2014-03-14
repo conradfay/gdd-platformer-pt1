@@ -22,47 +22,6 @@ class GameObject
             delete shape;
         }
 
-        /**
-         * Any updates to an object's state go here. This is also called
-         * integration.
-         */
-        virtual void update(float dt)
-        {
-            shape->move(velX * dt, velY * dt);
-            velX = 0;
-            velY = 0;
-        }
-
-        /**
-         * This draws an object to the game window, but remember, it does not
-         * actually DISPLAY it on the screen, that's what
-         * sf::RenderWindow::display() is for.
-         */
-        virtual void render(sf::RenderWindow& gameWindow)
-        {
-            gameWindow.draw(*shape);
-        }
-
-        void move(Direction direction)
-        {
-            switch (direction)
-            {
-                case UP:
-                    velY -= speed;
-                    break;
-                case DOWN:
-                    velY += speed;
-                    break;
-                case LEFT:
-                    velX -= speed;
-                    break;
-                case RIGHT:
-                    velX += speed;
-                    break;
-            }
-        }
-
-    protected:
         float velX, velY; // Object velocity.
         float speed; // Maximum speed object may move at.
         sf::Shape* shape; // Abstract Shape.
@@ -149,13 +108,13 @@ int main(int argc, char** args)
             std::cout << "X key pressed." << std::endl;
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up))
-            player->move(UP);
+            player->velY -= player->speed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))
-            player->move(DOWN);
+            player->velY += player->speed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left))
-            player->move(LEFT);
+            player->velX -= player->speed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
-            player->move(RIGHT);
+            player->velX += player->speed;
 
         // Using an iterator means we can store game objects in any STL
         // container down the road.
@@ -166,10 +125,19 @@ int main(int argc, char** args)
             GameObject* gameObject = *gameObjectIt; 
 
             // STATE UPDATES/CALCULATIONS
+            // Any updates to an object's state goes here. This is also called
+            // integration.
             gameObject->update(dt); // Update object state.
+            gameObject->shape->move(gameObject->velX * dt, gameObject->velY * dt);
+            gameObject->velX = 0;
+            gameObject->velY = 0;
 
             // RENDER
+            // This draws an object to the game window, but remember, it does not
+            // actually DISPLAY it on the screen, that's what
+            // sf::RenderWindow::display() is for.
             gameObject->render(gameWindow); // Render object to window.
+            gameWindow.draw(*(gameObject->shape));
         }
 
         // Display on screen what has been rendered to the window.
