@@ -3,3 +3,7 @@
 close window event.
 3. Explain difference between polling a key event and checking isKeyPressed in
 realtime.
+4. Set up fps.
+5. Add classes for objects.
+6. Draw player object on screen.
+7. Set up player movement.

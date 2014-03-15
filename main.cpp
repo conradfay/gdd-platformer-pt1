@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <math.h>
+#include <algorithm>
 
 
 typedef enum {
@@ -13,24 +14,15 @@ typedef enum {
 } Direction;
 
 
-typedef enum {
-    PLAYER,
-    TURRET,
-    BULLET
-} GameObjectType;
-
-
 class GameObject
 {
     public:
-        GameObject(sf::Shape* shape) : velX(0.0f), velY(0.0f), maxSpeed(200.0f), shape(shape) { }
+        GameObject() : velX(0.0f), velY(0.0f), maxSpeed(100.0f) { }
 
         virtual ~GameObject()
         {
-            delete shape;
+            delete shape; 
         }
-
-        virtual GameObjectType getType() = 0;
 
         float velX, velY; // Object velocity.
         float maxSpeed; // Maximum maxSpeed object may move at.
@@ -41,39 +33,39 @@ class GameObject
 class Player : public GameObject
 {
     public:
-        Player(sf::Shape* shape) : GameObject(shape) { }
-
-        virtual GameObjectType getType()
+        Player() : GameObject()
         {
-            return PLAYER; 
-        }
+            // Player represented by a 20x20 rectangle with a 5px outline.
+            const int PL_SIZE_X = 20;
+            const int PL_SIZE_Y = 20;
+            const int PL_OUTLINE_THICKNESS = 5;
+            // Shape used to render the player.
+            sf::RectangleShape* playerShape = new sf::RectangleShape;
+            playerShape->setSize(sf::Vector2f(PL_SIZE_X, PL_SIZE_Y));
+            playerShape->setOutlineColor(sf::Color::Black);
+            playerShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
+            // Set player's local origin to its centroid instead of (0,0).
+            playerShape->setOrigin(PL_SIZE_X / 2, PL_SIZE_Y / 2);
+            shape = playerShape;
+       }
 };
 
-class Turret : public GameObject
-{
-    public:
-        Turret(sf::Shape* shape) : GameObject(shape) { }
-
-        virtual GameObjectType getType()
-        {
-            return TURRET; 
-        }
-};
 
 class Bullet : public GameObject
 {
     public:
-        Bullet(sf::Shape* shape) : GameObject(shape)
+        Bullet() : GameObject()
         {
             maxSpeed = 10.0f;
+            const int BT_RADIUS = 5;
+            const int PL_OUTLINE_THICKNESS = 5;
+            sf::CircleShape* bulletShape = new sf::CircleShape;
+            bulletShape->setRadius(BT_RADIUS);
+            bulletShape->setOutlineColor(sf::Color::Black);
+            bulletShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
+            bulletShape->setOrigin(BT_RADIUS, BT_RADIUS);
+            shape = bulletShape;
         }
-
-        virtual GameObjectType getType()
-        {
-            return BULLET; 
-        }
-
-        float dmg; // Bullet damage.
 };
 
 
@@ -108,28 +100,11 @@ int main(int argc, char** args)
     gameWindow.setFramerateLimit(FPS); // Yep, it's that easy.
 
     // Initialize game objects.
-    std::vector<GameObject*> gameObjects; // Maintain a list of game objects.
-    // Player represented by a 50x50px rectangle at location (0,0) with a 5px
-    // outline.
-    sf::RectangleShape* playerShape; // Shape used to render the player.
-    const int PL_SIZE_X = 50;
-    const int PL_SIZE_Y = 50;
-    const int PL_OUTLINE_THICKNESS = 5;
-    playerShape = new sf::RectangleShape;
-    playerShape->setSize(sf::Vector2f(PL_SIZE_X, PL_SIZE_Y));
-    playerShape->setOutlineColor(sf::Color::Black);
-    playerShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
-    // Place player at the center of the screen.
-    playerShape->setPosition(
-            SCREEN_WIDTH / 2 - PL_SIZE_X,
-            SCREEN_HEIGHT / 2 - PL_SIZE_Y
-    );
-    // Set player's origin to its centroid instead of (0,0).
-    playerShape->setOrigin(PL_SIZE_X / 2, PL_SIZE_Y / 2);
-    Player* player; // Player object that the user controls.
-    player = new Player(playerShape);
-    gameObjects.push_back(player);
-
+    // Create player at center of the screen.
+    Player player;
+    player.shape->setPosition(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+    // Maintain lists of game objects.
+    std::vector<Bullet*> bullets;
 
     // GAME LOOP
     bool quit = false; // If set to true, game will quit immediately.
@@ -177,27 +152,20 @@ int main(int argc, char** args)
                     {
                         case sf::Mouse::Left:
                             std::cout << "pew!" << std::endl; 
-
-                            sf::CircleShape* bulletShape;
-                            const int BT_RADIUS = 5;
-                            const int PL_OUTLINE_THICKNESS = 5;
-                            bulletShape = new sf::CircleShape;
-                            bulletShape->setRadius(BT_RADIUS);
-                            bulletShape->setOutlineColor(sf::Color::Black);
-                            bulletShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
+                            // Create bullet on the radius of the player.
+                            Bullet* bullet = new Bullet;
                             sf::Vector2f bulletPos = mapToRadius(
-                                    *player,
-                                    event.mouseButton.x,
-                                    event.mouseButton.y,
-                                    player->shape->getLocalBounds().width
+                                player,
+                                event.mouseButton.x,
+                                event.mouseButton.y,
+                                player.shape->getLocalBounds().width
                             );
-                            bulletShape->setPosition(bulletPos.x, bulletPos.y);
-                            bulletShape->setOrigin(BT_RADIUS, BT_RADIUS);
-                            Bullet* bullet = new Bullet(bulletShape);
-                            bullet->velX = (bulletPos.x - player->shape->getPosition().x) * bullet->maxSpeed;
-                            bullet->velY = (bulletPos.y - player->shape->getPosition().y) * bullet->maxSpeed;
-                            gameObjects.push_back(bullet);
-
+                            bullet->shape->setPosition(bulletPos);
+                            // Its velocity is a multiple of the vector from the
+                            // center of the player to the bullet position.
+                            bullet->velX = (bulletPos.x - player.shape->getPosition().x) * bullet->maxSpeed;
+                            bullet->velY = (bulletPos.y - player.shape->getPosition().y) * bullet->maxSpeed;
+                            bullets.push_back(bullet);
                             break;
                     }
 
@@ -220,43 +188,37 @@ int main(int argc, char** args)
         }
         // Movement.
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
-            player->velY -= player->maxSpeed;
+            player.velY -= player.maxSpeed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
-            player->velY += player->maxSpeed;
+            player.velY += player.maxSpeed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
-            player->velX -= player->maxSpeed;
+            player.velX -= player.maxSpeed;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
-            player->velX += player->maxSpeed;
+            player.velX += player.maxSpeed;
 
         // STATE UPDATES/CALCULATIONS
         // Any updates to an object's state goes here. This is also called
         // integration.
-        for (std::vector<GameObject*>::iterator it = gameObjects.begin(); it != gameObjects.end(); it++)
+        player.shape->move(player.velX * dt, player.velY * dt);
+        player.velX = 0;
+        player.velY = 0;
+        for (std::vector<Bullet*>::iterator it = bullets.begin(); it != bullets.end(); it++)
         {
-            GameObject& gameObject = **it;
-            sf::Shape& shape = *gameObject.shape;
+            Bullet& bullet = **it;
+            sf::Shape& shape = *bullet.shape;
             // We will have different calculations to make depending on what
             // kind of object it is.
-            switch (gameObject.getType())
+            shape.move(bullet.velX * dt, bullet.velY * dt);
+            // If the bullet goes offscreen, remove it from gameObjects
+            // and delete it from memory.
+            if (shape.getPosition().x < 0 || shape.getPosition().x > SCREEN_WIDTH || 
+                shape.getPosition().y < 0 || shape.getPosition().y > SCREEN_HEIGHT)
             {
-                case PLAYER:
-                    shape.move(gameObject.velX * dt, gameObject.velY * dt);
-                    gameObject.velX = 0;
-                    gameObject.velY = 0;
-                    break;
-                case BULLET:
-                    shape.move(gameObject.velX * dt, gameObject.velY * dt);
-                    // If the bullet goes offscreen, remove it from gameObjects
-                    // and delete it from memory.
-                    if (shape.getPosition().x < 0 || shape.getPosition().x > SCREEN_WIDTH || shape.getPosition().y < 0 || shape.getPosition().y > SCREEN_HEIGHT)
-                    {
-                        delete &gameObject;
-                        gameObjects.erase(it);
-                        // Since the size of the vector was reduced by one,
-                        // this relocates the iterator to the correct position.
-                        it--; 
-                    }
-                    break;
+                delete &bullet;
+                bullets.erase(it);
+                // Since the size of the vector was reduced by one,
+                // this relocates the iterator to the correct position.
+                it--; 
             }
         }
 
@@ -264,10 +226,11 @@ int main(int argc, char** args)
         // This draws an object to the game window, but remember, it does not
         // actually DISPLAY it on the screen, that's what
         // sf::RenderWindow::display() is for.
-        for (std::vector<GameObject*>::iterator it = gameObjects.begin(); it != gameObjects.end(); it++)
+        gameWindow.draw(*player.shape);
+        for (std::vector<Bullet*>::iterator it = bullets.begin(); it != bullets.end(); it++)
         {
-            GameObject& gameObject = **it;
-            gameWindow.draw(*gameObject.shape);
+            Bullet& bullet = **it;
+            gameWindow.draw(*bullet.shape);
         }
 
         // Display on screen what has been rendered to the window.
