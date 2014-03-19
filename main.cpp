@@ -2,9 +2,12 @@
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <vector>
+#include <string>
+#include <map>
 #include <math.h>
 #include <algorithm>
 
+typedef unsigned int GameObjectHandle;
 
 typedef enum {
     UP,
@@ -13,27 +16,99 @@ typedef enum {
     RIGHT
 } Direction;
 
+typedef enum {
+    PLAYER,
+    PLAYER_BULLET,
+    ENEMY,
+    ENEMY_BULLET
+} ObjectID;
+
+class GameObject;
+class PlayerBullet;
+class Player;
+
+typedef std::vector<GameObject*> GameObjectManager;
 
 class GameObject
 {
     public:
-        GameObject() : velX(0.0f), velY(0.0f), maxSpeed(100.0f) { }
+        GameObject(sf::RenderWindow& gameWindow, GameObjectManager& gameObjectManager) : 
+            gameWindow(&gameWindow), gameObjectManager(&gameObjectManager), velX(0.0f), 
+            velY(0.0f), maxSpeed(100.0f), destroyed(false) { }
 
         virtual ~GameObject()
         {
             delete shape; 
         }
 
+        virtual ObjectID getID() = 0;
+
+        virtual void update(float dt) = 0;
+        
+        virtual void render()
+        {
+            gameWindow->draw(*shape);
+        }
+
+        virtual void destroy()
+        {
+            // Object to be deleted externally later.
+            destroyed = true; 
+        }
+
+        sf::RenderWindow* gameWindow;
+        GameObjectManager* gameObjectManager;
         float velX, velY; // Object velocity.
-        float maxSpeed; // Maximum maxSpeed object may move at.
+        float maxSpeed; // Maximum speed object may move at.
         sf::Shape* shape; // Abstract Shape.
+        bool destroyed; // Flag for delayed deletion.
+        int collisionLayer;
+        std::vector<std::string> tags;
 };
+
+class PlayerBullet : public GameObject
+{
+    public:
+        PlayerBullet(sf::RenderWindow& gameWindow, GameObjectManager& gameObjectManager) :
+            GameObject(gameWindow, gameObjectManager)
+        {
+            maxSpeed = 10.0f;
+            const int BT_RADIUS = 5;
+            const int BT_OUTLINE_THICKNESS = 5;
+            sf::CircleShape* playerBulletShape = new sf::CircleShape;
+            playerBulletShape->setRadius(BT_RADIUS);
+            playerBulletShape->setOutlineColor(sf::Color::Black);
+            playerBulletShape->setOutlineThickness(BT_OUTLINE_THICKNESS);
+            playerBulletShape->setOrigin(BT_RADIUS, BT_RADIUS);
+            shape = playerBulletShape;
+        }
+
+        virtual ~PlayerBullet() { }
+
+        virtual ObjectID getID()
+        {
+            return PLAYER_BULLET; 
+        }
+
+        virtual void update(float dt)
+        {
+            shape->move(velX * dt, velY * dt);
+            // If the playerBullet goes offscreen, remove it from gameObjectManager
+            // and delete it from memory.
+            if (shape->getPosition().x < 0 || shape->getPosition().x > gameWindow->getSize().x || 
+                shape->getPosition().y < 0 || shape->getPosition().y > gameWindow->getSize().y)
+            {
+                destroy();
+            }
+        }
+};
+
 
 
 class Player : public GameObject
 {
     public:
-        Player() : GameObject()
+        Player(sf::RenderWindow& gameWindow, GameObjectManager& gameObjectManager) : GameObject(gameWindow, gameObjectManager)
         {
             // Player represented by a 20x20 rectangle with a 5px outline.
             const int PL_SIZE_X = 20;
@@ -47,24 +122,102 @@ class Player : public GameObject
             // Set player's local origin to its centroid instead of (0,0).
             playerShape->setOrigin(PL_SIZE_X / 2, PL_SIZE_Y / 2);
             shape = playerShape;
-       }
+        }
+
+        virtual ~Player()
+        {
+        }
+
+        virtual ObjectID getID()
+        {
+            return PLAYER; 
+        }
+
+        virtual void update(float dt)
+        {
+            shape->move(velX * dt, velY * dt);
+            velX = 0;
+            velY = 0;
+        }
+
+        // Move in specified direction.
+        void move(Direction direction)
+        {
+            switch (direction)
+            {
+                case UP:
+                    velY -= maxSpeed;
+                    break;
+                case DOWN:
+                    velY += maxSpeed;
+                    break;
+                case LEFT:
+                    velX -= maxSpeed;
+                    break;
+                case RIGHT:
+                    velX += maxSpeed;
+                    break;
+            } 
+        }
+
+        // Shoot towards specified coordinates.
+        void shoot(float x, float y)
+        {
+            std::cout << "pew!" << std::endl; 
+            // Create playerBullet on the radius of the player.
+            PlayerBullet* playerBullet = new PlayerBullet(*gameWindow, *gameObjectManager);
+
+            // Get center coordinate of object.
+            sf::Vector2f objectCenter = shape->getPosition();
+            // Vector from objects center to the input coordinates.
+            sf::Vector2f inVector(x - objectCenter.x, y - objectCenter.y);  
+            // Calculate normalized vector.
+            float magnitude = sqrt(pow(inVector.x, 2) + pow(inVector.y, 2));
+            sf::Vector2f playerBulletPos = sf::Vector2f(inVector / magnitude) * shape->getLocalBounds().width + objectCenter;
+
+            playerBullet->shape->setPosition(playerBulletPos);
+            // Its velocity is a multiple of the vector from the
+            // center of the player to the playerBullet position.
+            playerBullet->velX = (playerBulletPos.x - shape->getPosition().x) * playerBullet->maxSpeed;
+            playerBullet->velY = (playerBulletPos.y - shape->getPosition().y) * playerBullet->maxSpeed;
+            gameObjectManager->push_back(playerBullet);
+        }
 };
 
 
-class Bullet : public GameObject
+class Enemy : public GameObject
 {
     public:
-        Bullet() : GameObject()
+        Enemy(sf::RenderWindow& gameWindow, GameObjectManager& gameObjectManager) : GameObject(gameWindow, gameObjectManager)
         {
-            maxSpeed = 10.0f;
-            const int BT_RADIUS = 5;
+            // Player represented by a 20x20 rectangle with a 5px outline.
+            const int PL_SIZE_X = 20;
+            const int PL_SIZE_Y = 20;
             const int PL_OUTLINE_THICKNESS = 5;
-            sf::CircleShape* bulletShape = new sf::CircleShape;
-            bulletShape->setRadius(BT_RADIUS);
-            bulletShape->setOutlineColor(sf::Color::Black);
-            bulletShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
-            bulletShape->setOrigin(BT_RADIUS, BT_RADIUS);
-            shape = bulletShape;
+            // Shape used to render the player.
+            sf::RectangleShape* playerShape = new sf::RectangleShape;
+            playerShape->setSize(sf::Vector2f(PL_SIZE_X, PL_SIZE_Y));
+            playerShape->setOutlineColor(sf::Color::Red);
+            playerShape->setOutlineThickness(PL_OUTLINE_THICKNESS);
+            // Set player's local origin to its centroid instead of (0,0).
+            playerShape->setOrigin(PL_SIZE_X / 2, PL_SIZE_Y / 2);
+            shape = playerShape;
+        }
+
+        virtual ~Enemy()
+        {
+        }
+
+        virtual ObjectID getID()
+        {
+            return ENEMY; 
+        }
+
+        virtual void update(float dt)
+        {
+            shape->move(velX * dt, velY * dt);
+            velX = 0;
+            velY = 0;
         }
 };
 
@@ -100,11 +253,11 @@ int main(int argc, char** args)
     gameWindow.setFramerateLimit(FPS); // Yep, it's that easy.
 
     // Initialize game objects.
+    GameObjectManager gameObjectManager;
     // Create player at center of the screen.
-    Player player;
+    Player player(gameWindow, gameObjectManager);
     player.shape->setPosition(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-    // Maintain lists of game objects.
-    std::vector<Bullet*> bullets;
+    gameObjectManager.push_back(&player);
 
     // GAME LOOP
     bool quit = false; // If set to true, game will quit immediately.
@@ -151,21 +304,7 @@ int main(int argc, char** args)
                     switch (event.mouseButton.button)
                     {
                         case sf::Mouse::Left:
-                            std::cout << "pew!" << std::endl; 
-                            // Create bullet on the radius of the player.
-                            Bullet* bullet = new Bullet;
-                            sf::Vector2f bulletPos = mapToRadius(
-                                player,
-                                event.mouseButton.x,
-                                event.mouseButton.y,
-                                player.shape->getLocalBounds().width
-                            );
-                            bullet->shape->setPosition(bulletPos);
-                            // Its velocity is a multiple of the vector from the
-                            // center of the player to the bullet position.
-                            bullet->velX = (bulletPos.x - player.shape->getPosition().x) * bullet->maxSpeed;
-                            bullet->velY = (bulletPos.y - player.shape->getPosition().y) * bullet->maxSpeed;
-                            bullets.push_back(bullet);
+                            player.shoot(event.mouseButton.x, event.mouseButton.y);
                             break;
                     }
 
@@ -188,37 +327,25 @@ int main(int argc, char** args)
         }
         // Movement.
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::W))
-            player.velY -= player.maxSpeed;
+            player.move(UP);
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::S))
-            player.velY += player.maxSpeed;
+            player.move(DOWN);
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::A))
-            player.velX -= player.maxSpeed;
+            player.move(LEFT);
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::D))
-            player.velX += player.maxSpeed;
+            player.move(RIGHT);
 
         // STATE UPDATES/CALCULATIONS
         // Any updates to an object's state goes here. This is also called
         // integration.
-        player.shape->move(player.velX * dt, player.velY * dt);
-        player.velX = 0;
-        player.velY = 0;
-        for (std::vector<Bullet*>::iterator it = bullets.begin(); it != bullets.end(); it++)
+        int count = 0;
+        for (std::vector<GameObject*>::iterator it = gameObjectManager.begin(); it != gameObjectManager.end(); it++)
         {
-            Bullet& bullet = **it;
-            sf::Shape& shape = *bullet.shape;
-            // We will have different calculations to make depending on what
-            // kind of object it is.
-            shape.move(bullet.velX * dt, bullet.velY * dt);
-            // If the bullet goes offscreen, remove it from gameObjects
-            // and delete it from memory.
-            if (shape.getPosition().x < 0 || shape.getPosition().x > SCREEN_WIDTH || 
-                shape.getPosition().y < 0 || shape.getPosition().y > SCREEN_HEIGHT)
-            {
-                delete &bullet;
-                bullets.erase(it);
-                // Since the size of the vector was reduced by one,
-                // this relocates the iterator to the correct position.
-                it--; 
+            GameObject& gameObject = **it;
+            gameObject.update(dt);
+            if (gameObject.destroyed) {
+                gameObjectManager.erase(it);
+                it--;
             }
         }
 
@@ -226,11 +353,10 @@ int main(int argc, char** args)
         // This draws an object to the game window, but remember, it does not
         // actually DISPLAY it on the screen, that's what
         // sf::RenderWindow::display() is for.
-        gameWindow.draw(*player.shape);
-        for (std::vector<Bullet*>::iterator it = bullets.begin(); it != bullets.end(); it++)
+        for (std::vector<GameObject*>::iterator it = gameObjectManager.begin(); it != gameObjectManager.end(); it++)
         {
-            Bullet& bullet = **it;
-            gameWindow.draw(*bullet.shape);
+            GameObject& gameObject = **it;
+            gameObject.render();
         }
 
         // Display on screen what has been rendered to the window.
